@@ -30,8 +30,8 @@ function test()
     rho_0 = ones(D)
 
     # hyper parameter for α
-    mu~_0 = 1
-    W~_0::Matrix{Float64} = 0.04
+    mu_tilde_0 = 1
+    W_tilde_0::Matrix{Float64} = 0.04
 
     # initilize
     U,_,_ = init_model_params(W_0, nu_0, mu_0, beta_0, N)
@@ -39,8 +39,25 @@ function test()
     T = init_T(W_0, nu_0, rho_0, beta_0, K)
 end
 
-function sample_alpha(nu~, I, W~, R, U, V, K)
-    nu* = nu~ + sum(I)
+function sample_theta(U, beta_, mu_, W_, nu_)
+    N = size(U)[2]
+    U_bar = sum(U, 2) / N
+    S_bar::Matrix{Float64} = zeros(size(W)[1], size(W)[2])
+    for i in 1 : N
+        tmp = U[:,i] - U_bar
+        S_bar += (tmp * tmp')/N
+    mu = (beta_*mu_ + N*U_bar) / (beta_ + N)
+    beta = beta_ + N
+    nu = nu_ + N
+    W = inv(inv(W_) + beta_ * N * ((mu_ - U_bar) * (mu_ - U_bar)') / (beta_ + N))
+
+    Lambda_sample = rand(Wishart(nu, W))
+    mu_sample = rand(MvNormal(mu, inv(beta * Lambda)))
+    return mu_sample, Lambda_sample
+end
+
+function sample_alpha(nu_tilde, I, W_tilde, R, U, V, K)
+    nu = nu_tilde + sum(I)
     acc::Matrix{Float64} = 0
     for k in 1 : K
         for i in 1 : N
@@ -49,8 +66,8 @@ function sample_alpha(nu~, I, W~, R, U, V, K)
             end
         end
     end
-    W*::Matrix{Float64} = inv(inv(W~) + acc)
-    return rand(Wishart(nu*, W*))
+    W::Matrix{Float64} = inv(inv(W_tilde) + acc)
+    return rand(Wishart(nu, W))
 end
 
 function creat_dummy_data(N::Int64, M::Int64, K::Int64, threshold::Float64)
