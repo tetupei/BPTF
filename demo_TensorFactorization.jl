@@ -39,12 +39,42 @@ function test()
     T = init_T(W_0, nu_0, rho_0, beta_0, K)
 
     L = 10
-    for i in 1 : L
+    for l in 1 : L
         alpha = sample_alpha(nu_tilde_0, W_tilde_0, mask, R, U, V, T)
         mu_U, Lambda_U = sample_theta(U, beta_0, mu_0, W_0, nu_0)
         mu_V, Lambda_V = sample_theta(V, beta_0, mu_0, W_0, nu_0)
         mu_T, Lambda_T = sample_theta(T, beta_0, mu_0, W_0, nu_0)
+
+        # Qを作る！！！！
+        for i in 1 : N
     end
+end
+
+"""
+# Arguments
+- X(Q(=V'*T): MxK, P(=U'*T): NxK)
+
+# Note
+Q_jk = V_j element_wise product T_k
+"""
+function sample_Ui(i, mu_, Lambda_, alpha, R, Q)
+    M, K = size(X)
+    acc_Lambda::Matrix{Float64} = zeros(size(Lambda_))
+    for k in 1 : K
+        for j in 1 : M
+            acc_Lambda += alpha * I[i,j,k] * (Q[j, k] * Q[j, k]')
+        end
+    end
+    Lambda = Lambda_ + acc_Lambda
+
+    acc_mu::Matrix{Float64} = zeros(size(mu_))
+    for k in 1 : K
+        for j in 1 : M
+            acc_mu += alpha * I[i, j, k] * R[i, j, k] * Q[j, k]
+        end
+    end
+    mu = inv(Lambda)*(Lambda_ * mu_ + acc_mu)
+    return rand(MvNormal(mu, inv(Lambda)))
 end
 
 function sample_theta_T(T, beta_, rho_, W_, nu_)
