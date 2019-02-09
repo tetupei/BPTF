@@ -39,6 +39,20 @@ function test()
     T = init_T(W_0, nu_0, rho_0, beta_0, K)
 end
 
+function sample_alpha(nu~, I, W~, R, U, V, K)
+    nu* = nu~ + sum(I)
+    acc::Matrix{Float64} = 0
+    for k in 1 : K
+        for i in 1 : N
+            for j in 1 : M
+                acc[1,1] += I[i,j,k](R[i,j,k] - (U[:,i] ⋅ V[:,j] ⋅ T[:,k]))
+            end
+        end
+    end
+    W*::Matrix{Float64} = inv(inv(W~) + acc)
+    return rand(Wishart(nu*, W*))
+end
+
 function creat_dummy_data(N::Int64, M::Int64, K::Int64, threshold::Float64)
     R = rand(N,M,K)
     mask = R .< threshold
