@@ -10,7 +10,7 @@ using Distributions
 
 function test()
     R = creat_dummy_data(2,2,4,0.5)
-    missing_mask = missing_mask(R, 0.7)
+    mask = missing_mask(R, 0.7)
     R_obs = deepcopy(R)
     R_obs[missing_mask] = NaN
 
@@ -30,13 +30,19 @@ function test()
     rho_0 = ones(D)
 
     # hyper parameter for α
-    mu_tilde_0 = 1
+    nu_tilde_0 = 1
     W_tilde_0::Matrix{Float64} = 0.04
 
     # initilize
     U,_,_ = init_model_params(W_0, nu_0, mu_0, beta_0, N)
     V,_,_ = init_model_params(W_0, nu_0, mu_0, beta_0, M)
     T = init_T(W_0, nu_0, rho_0, beta_0, K)
+
+    L = 10
+    for i in 1 : L
+        alpha = sample_alpha(nu_tilde_0, W_tilde_0, mask, R, U, V, T)
+        mu_U, Lambda_U = sample_theta(U, beta_0, mu_0, W_0, nu_0)
+    end
 end
 
 function sample_theta(U, beta_, mu_, W_, nu_)
@@ -56,7 +62,8 @@ function sample_theta(U, beta_, mu_, W_, nu_)
     return mu_sample, Lambda_sample
 end
 
-function sample_alpha(nu_tilde, I, W_tilde, R, U, V, K)
+function sample_alpha(nu_tilde, W_tilde, I, R, U, V, T)
+    N, M, K = size(R)
     nu = nu_tilde + sum(I)
     acc::Matrix{Float64} = 0
     for k in 1 : K
