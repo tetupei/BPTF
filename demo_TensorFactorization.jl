@@ -42,11 +42,30 @@ function test()
     for i in 1 : L
         alpha = sample_alpha(nu_tilde_0, W_tilde_0, mask, R, U, V, T)
         mu_U, Lambda_U = sample_theta(U, beta_0, mu_0, W_0, nu_0)
+        mu_V, Lambda_V = sample_theta(V, beta_0, mu_0, W_0, nu_0)
+        mu_T, Lambda_T = sample_theta(T, beta_0, mu_0, W_0, nu_0)
     end
 end
 
+function sample_theta_T(T, beta_, rho_, W_, nu_)
+    _, K = size(T)
+    mu = (beta_*rho_ + T[:,1]) / (beta_ + 1)
+    beta = beta_ + 1
+    nu = nu_ + K
+    acc::Matrix{Float64} = zeros(size(W_))
+    for k in 2 : K
+        tmp = T[k, :] - T[k-1, :]
+        acc += tmp * tmp'
+    end
+    W = inv(inv(W_) + acc + (beta_/(1+beta)) * ((T[1,:] - rho_) * (T[1,:] - rho_)'))
+
+    Lambda_sample = rand(Wishart(nu, W))
+    mu_sample = rand(MvNormal(mu, inv(beta * Lambda)))
+    return mu_sample, Lambda_sample
+end
+
 function sample_theta(U, beta_, mu_, W_, nu_)
-    N = size(U)[2]
+    _, N = size(U)
     U_bar = sum(U, 2) / N
     S_bar::Matrix{Float64} = zeros(size(W)[1], size(W)[2])
     for i in 1 : N
@@ -55,7 +74,7 @@ function sample_theta(U, beta_, mu_, W_, nu_)
     mu = (beta_*mu_ + N*U_bar) / (beta_ + N)
     beta = beta_ + N
     nu = nu_ + N
-    W = inv(inv(W_) + beta_ * N * ((mu_ - U_bar) * (mu_ - U_bar)') / (beta_ + N))
+    W = inv(inv(W_) + N*S_bar + beta_ * N * ((mu_ - U_bar) * (mu_ - U_bar)') / (beta_ + N))
 
     Lambda_sample = rand(Wishart(nu, W))
     mu_sample = rand(MvNormal(mu, inv(beta * Lambda)))
