@@ -13,7 +13,7 @@ function test()
     R = creat_dummy_data(2,2,4,0.5)
     mask = missing_mask(R, 0.7)
     R_obs = deepcopy(R)
-    R_obs[missing_mask] = NaN
+    R_obs[mask] .= 0  # It should be NaN, but use 0 here becausde 0 * NaN = NaN.
 
     # hyper parameter for dimension of U,V and T
     D = 2
@@ -29,12 +29,11 @@ function test()
 
     # hyper parameter for alpha prior
     nu_tilde_0 = 1
-    W_tilde_0::Matrix{Float64} = 0.04
+    W_tilde_0::Matrix{Float64} = hcat([0.04])
 
     U,V,T,alpha = gibbs_sampling(R, mask, D, mu_0, beta_0, W_0, nu_0, rho_0, nu_tilde_0, W_tilde_0)
     R_inferred =  inferenced_R(U,V,T,alpha)
 end
-
 
 function gibbs_sampling(R, mask, D, mu_0, beta_0, W_0, nu_0, rho_0, nu_tilde_0, W_tilde_0)
 
@@ -113,9 +112,12 @@ function inferenced_R(U, V, T, alpha)
             for j in 1 : M
                 acc = 0.
                 for l in 1 : L
-                    acc += rand(Normal((U[:,i,l] ⋅ V[:,j,l] ⋅ T[:,k,l]), alpha[:,:,l]))
+                    acc += rand(Normal(multi_dot(U[:,i,l],V[:,j,l],T[:,k,l]), alpha[:,:,l]))
                 end
                 R_pred[i,j,k] = acc / L
+            end
+        end
+    end
     return R_pred
 end
 
@@ -136,7 +138,7 @@ function sample_TK(K, mu_, Lambda_, alpha, X, I, T_K_prev)
         end
     end
     mu = inv(Lambda) * (Lambda_ * T_K_prev + acc_mu)
-    return rand(MvNormal(mu, inv(Lambda)))
+    return rand(MvNormal(mu, PDMats.PDMat(Symmetric(inv(Lambda)))))
 end
 
 function sample_Tk_mt2(k, mu_, Lambda_, alpha, X, I, T_prev, T_next)
@@ -156,7 +158,7 @@ function sample_Tk_mt2(k, mu_, Lambda_, alpha, X, I, T_prev, T_next)
         end
     end
     mu = inv(Lambda) * (Lambda_ * (T_prev + T_next) + acc_mu)
-    return rand(MvNormal(mu, inv(Lambda)))
+    return rand(MvNormal(mu, PDMats.PDMat(Symmetric(inv(Lambda)))))
 end
 
 function sample_T1(mu_, Lambda_, alpha, X, I, T_2)
@@ -170,7 +172,7 @@ function sample_T1(mu_, Lambda_, alpha, X, I, T_2)
     Lambda = 2Lambda_ + acc_Lambda
 
     mu = (T_2 + mu_) ./ 2
-    return rand(MvNormal(mu, inv(Lambda)))
+    return rand(MvNormal(mu, PDMats.PDMat(Symmetric(inv(Lambda)))))
 end
 
 """
@@ -197,7 +199,7 @@ function sample_Ui(i, mu_, Lambda_, alpha, R, Q, I)
         end
     end
     mu = inv(Lambda)*(Lambda_ * mu_ + acc_mu)
-    return rand(MvNormal(mu, inv(Lambda)))
+    return rand(MvNormal(mu, PDMats.PDMat(Symmetric(inv(Lambda)))))
 end
 
 function sample_theta_T(T, beta_, rho_, W_, nu_)
@@ -213,7 +215,7 @@ function sample_theta_T(T, beta_, rho_, W_, nu_)
     W = inv(inv(W_) + acc + (beta_/(1+beta)) * ((T[1,:] - rho_) * (T[1,:] - rho_)'))
 
     Lambda_sample = rand(Wishart(nu, W))
-    mu_sample = rand(MvNormal(mu, inv(beta * Lambda)))
+    mu_sample = rand(MvNormal(mu, PDMats.PDMat(Symmetric(inv(beta * Lambda)))))
     return mu_sample, Lambda_sample
 end
 
@@ -224,33 +226,73 @@ function sample_theta(U, beta_, mu_, W_, nu_)
     for i in 1 : N
         tmp = U[:,i] - U_bar
         S_bar += (tmp * tmp')/N
+    end
     mu = (beta_*mu_ + N*U_bar) / (beta_ + N)
     beta = beta_ + N
     nu = nu_ + N
     W = inv(inv(W_) + N*S_bar + beta_ * N * ((mu_ - U_bar) * (mu_ - U_bar)') / (beta_ + N))
 
-    Lambda_sample = rand(Wishart(nu, W))
-    mu_sample = rand(MvNormal(mu, inv(beta * Lambda)))
+    Lambda_sample = rand(Wishart(nu, PDMats.PDMat(Symmetric(W))))
+    mu_sample = rand(MvNormal(mu, PDMats.PDMat(Symmetric(inv(beta * Lambda)))))
     return mu_sample, Lambda_sample
+end
+
+function multi_dot(X::Vector{Float64},Y::Vector{Float64},Z::Vector{Float64})
+    L = length(X)
+    acc = 0
+    for i in 1 : L
+        acc += X[i] * Y[i] * Z[i]
+    end
+    return acc
 end
 
 function sample_alpha(nu_tilde, W_tilde, I, R, U, V, T)
     N, M, K = size(R)
     nu = nu_tilde + sum(I)
-    acc::Matrix{Float64} = 0
+    acc = hcat([0])
     for k in 1 : K
         for i in 1 : N
             for j in 1 : M
-                acc[1,1] += I[i,j,k](R[i,j,k] - (U[:,i] ⋅ V[:,j] ⋅ T[:,k]))
+                print(size(U), size(V), size(T))
+                acc[1,1] += I[i,j,k](R[i,j,k] - multi_dot(U[:,i],V[:,j],T[:,k]))
             end
         end
     end
     W::Matrix{Float64} = inv(inv(W_tilde) + acc)
-    return rand(Wishart(nu, W))
+    return rand(Wishart(nu, PDMats.PDMat(Symmetric(W))))
 end
 
-function test_sample_alpha(args)
-    body
+function test_sample_alpha()
+    R = creat_dummy_data(2,2,4,0.5)
+    mask = missing_mask(R, 0.7)
+    R_obs = deepcopy(R)
+    R_obs[mask] .= 0
+
+    # hyper parameter for dimension of U,V and T
+    D = 2
+
+    # hyper parameter for U,V,T prior
+    mu_0 = zeros(D)
+    beta_0 = 1
+    W_0 = Matrix{Float64}(I, D, D)  # parameter for Wishart dist, DxD matrix
+    nu_0 = D  # parameter for Wishart dist
+
+    # hyper parameter for R prior
+    rho_0 = ones(D)
+
+    # hyper parameter for alpha prior
+    nu_tilde_0 = 1
+    W_tilde_0 = hcat([0.04]) # 1x1 matrix
+
+
+    N,M,K = size(R)
+
+    # initilize
+    U1,_,_ = init_model_params(W_0, nu_0, mu_0, beta_0, N)
+    V1,_,_ = init_model_params(W_0, nu_0, mu_0, beta_0, M)
+    T1 = init_T(W_0, nu_0, rho_0, beta_0, K)
+
+    print(sample_alpha(nu_tilde_0, W_tilde_0, mask, R_obs, U1, V1, T1))
 end
 
 function creat_dummy_data(N::Int64, M::Int64, K::Int64, threshold::Float64)
@@ -292,8 +334,8 @@ mu: Dx1
 """
 function init_model_params(W_0, nu_0, mu_0, beta_0, N)
     Lambda = rand(Wishart(nu_0, W_0))
-    mu = rand(MvNormal(mu_0, inv(beta_0 * Lambda)))
-    init_matrix = rand(MvNormal(mu, inv(Lambda)), N)
+    mu = rand(MvNormal(mu_0, PDMats.PDMat(Symmetric(inv(beta_0 * Lambda)))))
+    init_matrix = rand(MvNormal(mu, PDMats.PDMat(Symmetric(inv(Lambda)))), N)
     return init_matrix, Lambda, mu
 end
 
@@ -331,7 +373,7 @@ function init_T(W_0, nu_0, rho_0, beta_0, K)
     T_1, Lambda_T, mu_T = init_model_params(W_0, nu_0, rho_0, beta_0, 1)
     T[:,1] = T_1
     for i in 2 : K
-        T[:, i] = rand(MvNormal(T[:, i-1], inv(Lambda_T)))
+        T[:, i] = rand(MvNormal(T[:, i-1], PDMats.PDMat(Symmetric(inv(Lambda_T)))))
     end
     return T
 end
@@ -351,4 +393,5 @@ end
 #test_init_model_params()
 #test_init_T()
 #test_create_dummy_data()
-test_missing_mask()
+#test_missing_mask()
+test_sample_alpha()
