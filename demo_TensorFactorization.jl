@@ -55,6 +55,7 @@ function test()
         mu_V, Lambda_V = sample_theta(V[:,:,l], beta_0, mu_0, W_0, nu_0)
         mu_T, Lambda_T = sample_theta(T[:,:,l], beta_0, mu_0, W_0, nu_0)
 
+        # Update U
         Q::Matrix{Vector{Float64}} = zeros(M, K, D)
         for k in 1 : K
             for j in 1 : M
@@ -65,6 +66,7 @@ function test()
             U[:,i,l+1] = sample_Ui(i, mu_U, Lambda_U, alpha[:,:,l], R_obs, Q, mask)
         end
 
+        # Update V
         P::Matrix{Vector{Float64}} = zeros(N, K, D)
         for k in 1 : K
             for i in 1 : N
@@ -88,6 +90,23 @@ function test()
         end
         T[:,K,l+1] = sample_TK(K, mu_T, Lambda_T, alpha[:,:,l], X, I, T[:,K-1,l])
     end
+
+    R_inferred =  inferenced_R(U,V,T,alpha)
+end
+
+function inferenced_R(U, V, T, alpha)
+    N, M, K = size(U)[2], size(V)[2], size(T)[2]
+    _,_,L = size(alpha)
+    R_pred = zeros(N,M,K)
+    for k in 1 : K
+        for i in 1 : N
+            for j in 1 : M
+                acc = 0.
+                for l in 1 : L
+                    acc += rand(Normal((U[:,i,l] ⋅ V[:,j,l] ⋅ T[:,k,l]), alpha[:,:,l]))
+                end
+                R_pred[i,j,k] = acc / L
+    return R_pred
 end
 
 function sample_TK(K, mu_, Lambda_, alpha, X, I, T_K_prev)
