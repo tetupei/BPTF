@@ -1,5 +1,6 @@
 using LinearAlgebra
 using Distributions
+using ProgressMeter
 
 #R: NxMxK
 #U: DxN
@@ -14,24 +15,30 @@ function test()
     R_obs = deepcopy(R)
     R_obs[missing_mask] = NaN
 
-    N = size(R)[1]
-    M = size(R)[2]
-    K = size(R)[3]
-
+    # hyper parameter for dimension of U,V and T
     D = 2
 
-    # hyper parameter for U,V,T
+    # hyper parameter for U,V,T prior
     mu_0 = zeros(D)
     beta_0 = 1
     W_0 = Matrix{Float64}(I, D, D)  # parameter for Wishart dist, DxD matrix
     nu_0 = D  # parameter for Wishart dist
 
-    # hyper parameter for R
+    # hyper parameter for R prior
     rho_0 = ones(D)
 
-    # hyper parameter for α
+    # hyper parameter for alpha prior
     nu_tilde_0 = 1
     W_tilde_0::Matrix{Float64} = 0.04
+
+    U,V,T,alpha = gibbs_sampling(R, mask, D, mu_0, beta_0, W_0, nu_0, rho_0, nu_tilde_0, W_tilde_0)
+    R_inferred =  inferenced_R(U,V,T,alpha)
+end
+
+
+function gibbs_sampling(R, mask, D, mu_0, beta_0, W_0, nu_0, rho_0, nu_tilde_0, W_tilde_0)
+
+    N,M,K = size(R)
 
     # initilize
     U1,_,_ = init_model_params(W_0, nu_0, mu_0, beta_0, N)
@@ -49,6 +56,7 @@ function test()
     V[:,:,1] = V1
     T[:,:,1] = T1
 
+    p = Progress(L)
     for l in 1 : L
         alpha[:,:,l] = sample_alpha(nu_tilde_0, W_tilde_0, mask, R, U[:,:,l], V[:,:,l], T[:,:,l])
         mu_U, Lambda_U = sample_theta(U[:,:,l], beta_0, mu_0, W_0, nu_0)
@@ -89,9 +97,11 @@ function test()
             T[:,k,l+1] = sample_Tk_mt2(k, mu_T, Lambda_T, alpha[:,:,l], X, I, T[:,k-1,l], T[:,k+1,l])
         end
         T[:,K,l+1] = sample_TK(K, mu_T, Lambda_T, alpha[:,:,l], X, I, T[:,K-1,l])
+
+        next!(p)
     end
 
-    R_inferred =  inferenced_R(U,V,T,alpha)
+    return U,V,T,alpha
 end
 
 function inferenced_R(U, V, T, alpha)
@@ -237,6 +247,10 @@ function sample_alpha(nu_tilde, W_tilde, I, R, U, V, T)
     end
     W::Matrix{Float64} = inv(inv(W_tilde) + acc)
     return rand(Wishart(nu, W))
+end
+
+function test_sample_alpha(args)
+    body
 end
 
 function creat_dummy_data(N::Int64, M::Int64, K::Int64, threshold::Float64)
