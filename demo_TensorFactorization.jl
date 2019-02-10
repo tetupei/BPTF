@@ -64,6 +64,20 @@ function test()
         for j in 1 : M
             V[:,j] = sample_Ui(j, mu_V, Lambda_V, alpha, R_obs, P, mask)
         end
+
+        X::Matrix{Vector{Float64}} = zeros(N, M, D)
+        for i in 1 : N
+            for j in 1 : M
+                X[i,j,:] = U[:,i] .* V[:,j]
+            end
+        end
+        T[:, 1] = sample_T1(mu_T, Lambda_T, alpha, X, I, T[:,2])
+        for k in 2 : K-1
+            T[:, k] = sample_Tk_mt2(k, mu_T, Lambda_T, alpha, X, I, T[:, k-1], T[:, k+1])
+        end
+
+
+
     end
 end
 
