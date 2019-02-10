@@ -67,6 +67,26 @@ function test()
     end
 end
 
+function sample_TK(K, mu_, Lambda_, alpha, X, I, T_K_prev)
+    N, M, _ = size(X)
+    acc_Lambda::Matrix{Float64} = zeros(size(Lambda_))
+    for i in 1 : N
+        for j in 1 : M
+            acc_Lambda += alpha * I[i,j,K] * (X[i,j] * X[i,j]')
+        end
+    end
+    Lambda = Lambda_ + acc_Lambda
+
+    acc_mu = zeros(size(mu_))
+    for i in 1 : N
+        for j in 1 : M
+            acc_mu += alpha * I[i,j,K] * R[i,j,K] * X[i,j]
+        end
+    end
+    mu = inv(Lambda) * (Lambda_ * T_K_prev + acc_mu)
+    return rand(MvNormal(mu, inv(Lambda)))
+end
+
 function sample_Tk_mt2(k, mu_, Lambda_, alpha, X, I, T_prev, T_next)
     N, M, _ = size(X)
     acc_Lambda::Matrix{Float64} = zeros(size(Lambda_))
