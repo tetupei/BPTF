@@ -45,9 +45,60 @@ function test()
         mu_V, Lambda_V = sample_theta(V, beta_0, mu_0, W_0, nu_0)
         mu_T, Lambda_T = sample_theta(T, beta_0, mu_0, W_0, nu_0)
 
-        # Qを作る！！！！
+        Q::Matrix{Vector{Float64}} = zeros(M, K, D)
+        for k in 1 : K
+            for j in 1 : M
+                Q[j,k,:] = V[:,j] .* T[:,k]
+            end
+        end
         for i in 1 : N
+            U[:,i] = sample_Ui(i, mu_U, Lambda_U, alpha, R_obs, Q, mask)
+        end
+
+        P::Matrix{Vector{Float64}} = zeros(N, K, D)
+        for k in 1 : K
+            for i in 1 : N
+                P[i,k,:] = U[:,i] .* T[:,k]
+            end
+        end
+        for j in 1 : M
+            V[:,j] = sample_Ui(j, mu_V, Lambda_V, alpha, R_obs, P, mask)
+        end
     end
+end
+
+function sample_Tk_mt2(k, mu_, Lambda_, alpha, X, I, T_prev, T_next)
+    N, M, _ = size(X)
+    acc_Lambda::Matrix{Float64} = zeros(size(Lambda_))
+    for i in 1 : N
+        for j in 1 : M
+            acc_Lambda += alpha * I[i,j,k] * (X[i,j] * X[i,j]')
+        end
+    end
+    Lambda = 2Lambda_ + acc_Lambda
+
+    acc_mu = zeros(size(mu_))
+    for i in 1 : N
+        for j in 1 : M
+            acc_mu += alpha * I[i,j,k] * R[i,j,k] * X[i,j]
+        end
+    end
+    mu = inv(Lambda) * (Lambda_ * (T_prev + T_next) + acc_mu)
+    return rand(MvNormal(mu, inv(Lambda)))
+end
+
+function sample_T1(mu_, Lambda_, alpha, X, I, T_2)
+    N, M, _ = size(X)
+    acc_Lambda::Matrix{Float64} = zeros(size(Lambda_))
+    for i in 1 : N
+        for j in 1 : M
+            acc_Lambda += alpha * I[i,j,1] * (X[i,j] * X[i,j]')
+        end
+    end
+    Lambda = 2Lambda_ + acc_Lambda
+
+    mu = (T_2 + mu_) ./ 2
+    return rand(MvNormal(mu, inv(Lambda)))
 end
 
 """
@@ -57,8 +108,8 @@ end
 # Note
 Q_jk = V_j element_wise product T_k
 """
-function sample_Ui(i, mu_, Lambda_, alpha, R, Q)
-    M, K = size(X)
+function sample_Ui(i, mu_, Lambda_, alpha, R, Q, I)
+    M, K, _ = size(Q)
     acc_Lambda::Matrix{Float64} = zeros(size(Lambda_))
     for k in 1 : K
         for j in 1 : M
