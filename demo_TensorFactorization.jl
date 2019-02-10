@@ -34,50 +34,59 @@ function test()
     W_tilde_0::Matrix{Float64} = 0.04
 
     # initilize
-    U,_,_ = init_model_params(W_0, nu_0, mu_0, beta_0, N)
-    V,_,_ = init_model_params(W_0, nu_0, mu_0, beta_0, M)
-    T = init_T(W_0, nu_0, rho_0, beta_0, K)
+    U1,_,_ = init_model_params(W_0, nu_0, mu_0, beta_0, N)
+    V1,_,_ = init_model_params(W_0, nu_0, mu_0, beta_0, M)
+    T1 = init_T(W_0, nu_0, rho_0, beta_0, K)
 
     L = 10
+    # Container
+    U = zeros(D, N, L+1)
+    V = zeros(D, M, L+1)
+    T = zeros(D, K, L+1)
+    alpha = zeros(size(W_tilde_0)[1],size(W_tilde_0)[2], L)
+
+    U[:,:,1] = U1
+    V[:,:,1] = V1
+    T[:,:,1] = T1
+
     for l in 1 : L
-        alpha = sample_alpha(nu_tilde_0, W_tilde_0, mask, R, U, V, T)
-        mu_U, Lambda_U = sample_theta(U, beta_0, mu_0, W_0, nu_0)
-        mu_V, Lambda_V = sample_theta(V, beta_0, mu_0, W_0, nu_0)
-        mu_T, Lambda_T = sample_theta(T, beta_0, mu_0, W_0, nu_0)
+        alpha[:,:,l] = sample_alpha(nu_tilde_0, W_tilde_0, mask, R, U[:,:,l], V[:,:,l], T[:,:,l])
+        mu_U, Lambda_U = sample_theta(U[:,:,l], beta_0, mu_0, W_0, nu_0)
+        mu_V, Lambda_V = sample_theta(V[:,:,l], beta_0, mu_0, W_0, nu_0)
+        mu_T, Lambda_T = sample_theta(T[:,:,l], beta_0, mu_0, W_0, nu_0)
 
         Q::Matrix{Vector{Float64}} = zeros(M, K, D)
         for k in 1 : K
             for j in 1 : M
-                Q[j,k,:] = V[:,j] .* T[:,k]
+                Q[j,k,:] = V[:,j,l] .* T[:,k,l]
             end
         end
         for i in 1 : N
-            U[:,i] = sample_Ui(i, mu_U, Lambda_U, alpha, R_obs, Q, mask)
+            U[:,i,l+1] = sample_Ui(i, mu_U, Lambda_U, alpha[:,:,l], R_obs, Q, mask)
         end
 
         P::Matrix{Vector{Float64}} = zeros(N, K, D)
         for k in 1 : K
             for i in 1 : N
-                P[i,k,:] = U[:,i] .* T[:,k]
+                P[i,k,:] = U[:,i,l] .* T[:,k,l]
             end
         end
         for j in 1 : M
-            V[:,j] = sample_Ui(j, mu_V, Lambda_V, alpha, R_obs, P, mask)
+            V[:,j,l+1] = sample_Ui(j, mu_V, Lambda_V, alpha[:,:,l], R_obs, P, mask)
         end
 
+        # Update T
         X::Matrix{Vector{Float64}} = zeros(N, M, D)
         for i in 1 : N
             for j in 1 : M
-                X[i,j,:] = U[:,i] .* V[:,j]
+                X[i,j,:] = U[:,i,l] .* V[:,j,l]
             end
         end
-        T[:, 1] = sample_T1(mu_T, Lambda_T, alpha, X, I, T[:,2])
+        T[:,1,l+1] = sample_T1(mu_T, Lambda_T, alpha[:,:,l], X, I, T[:,2,l])
         for k in 2 : K-1
-            T[:, k] = sample_Tk_mt2(k, mu_T, Lambda_T, alpha, X, I, T[:, k-1], T[:, k+1])
+            T[:,k,l+1] = sample_Tk_mt2(k, mu_T, Lambda_T, alpha[:,:,l], X, I, T[:,k-1,l], T[:,k+1,l])
         end
-
-
-
+        T[:,K,l+1] = sample_TK(K, mu_T, Lambda_T, alpha[:,:,l], X, I, T[:,K-1,l])
     end
 end
 
