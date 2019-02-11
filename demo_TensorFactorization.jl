@@ -34,7 +34,7 @@ function test()
     nu_tilde_0 = 1
     W_tilde_0::Matrix{Float64} = hcat([0.04])
 
-    U,V,T,alpha = gibbs_sampling(R, mask, D, mu_0, beta_0, W_0, nu_0, rho_0, nu_tilde_0, W_tilde_0)
+    U,V,T,alpha = gibbs_sampling(R_obs, mask, D, mu_0, beta_0, W_0, nu_0, rho_0, nu_tilde_0, W_tilde_0)
     R_inferred =  inferenced_R(U,V,T,alpha)
 end
 
@@ -73,7 +73,7 @@ function gibbs_sampling(R, mask, D, mu_0, beta_0, W_0, nu_0, rho_0, nu_tilde_0, 
             end
         end
         for i in 1 : N
-            U[:,i,l+1] = sample_Ui(i, mu_U, Lambda_U, alpha[:,:,l], R_obs, Q, mask)
+            U[:,i,l+1] = sample_Ui(i, mu_U, Lambda_U, alpha[:,:,l], R, Q, mask)
         end
 
         # Update V
@@ -84,7 +84,7 @@ function gibbs_sampling(R, mask, D, mu_0, beta_0, W_0, nu_0, rho_0, nu_tilde_0, 
             end
         end
         for j in 1 : M
-            V[:,j,l+1] = sample_Ui(j, mu_V, Lambda_V, alpha[:,:,l], R_obs, P, mask)
+            V[:,j,l+1] = sample_Ui(j, mu_V, Lambda_V, alpha[:,:,l], R, P, mask)
         end
 
         # Update T
@@ -96,14 +96,40 @@ function gibbs_sampling(R, mask, D, mu_0, beta_0, W_0, nu_0, rho_0, nu_tilde_0, 
         end
         T[:,1,l+1] = sample_T1(mu_T, Lambda_T, alpha[:,:,l], X, mask, T[:,2,l])
         for k in 2 : K-1
-            T[:,k,l+1] = sample_Tk_mt2(k, mu_T, Lambda_T, alpha[:,:,l], X, mask, R_obs, T[:,k-1,l], T[:,k+1,l])
+            T[:,k,l+1] = sample_Tk_mt2(k, mu_T, Lambda_T, alpha[:,:,l], X, mask, R, T[:,k-1,l], T[:,k+1,l])
         end
-        T[:,K,l+1] = sample_TK(K, mu_T, Lambda_T, alpha[:,:,l], X, mask, R_obs, T[:,K-1,l])
+        T[:,K,l+1] = sample_TK(K, mu_T, Lambda_T, alpha[:,:,l], X, mask, R, T[:,K-1,l])
 
         next!(p)
     end
 
     return U,V,T,alpha
+end
+
+function test_gibbs_sampling()
+    R = creat_dummy_data(2,2,4,0.5)
+    mask = missing_mask(R, 0.7)
+    R_obs = deepcopy(R)
+    R_obs[mask] .= 0  # It should be NaN, but use 0 here becausde 0 * NaN = NaN.
+
+    # hyper parameter for dimension of U,V and T
+    D = 2
+
+    # hyper parameter for U,V,T prior
+    mu_0 = zeros(D)
+    beta_0 = 1
+    W_0 = Matrix{Float64}(I, D, D)  # parameter for Wishart dist, DxD matrix
+    nu_0 = D  # parameter for Wishart dist
+
+    # hyper parameter for R prior
+    rho_0 = ones(D)
+
+    # hyper parameter for alpha prior
+    nu_tilde_0 = 1
+    W_tilde_0::Matrix{Float64} = hcat([0.04])
+
+    U,V,T,alpha = gibbs_sampling(R_obs, mask, D, mu_0, beta_0, W_0, nu_0, rho_0, nu_tilde_0, W_tilde_0)
+    print(U,V,T,alpha)
 end
 
 function inferenced_R(U, V, T, alpha)
@@ -115,13 +141,40 @@ function inferenced_R(U, V, T, alpha)
             for j in 1 : M
                 acc = 0.
                 for l in 1 : L
-                    acc += rand(Normal(multi_dot(U[:,i,l],V[:,j,l],T[:,k,l]), alpha[:,:,l]))
+                    acc += rand(Normal(multi_dot(U[:,i,l],V[:,j,l],T[:,k,l]), alpha[:,:,l][1][1]))
                 end
                 R_pred[i,j,k] = acc / L
             end
         end
     end
     return R_pred
+end
+
+function test_inferenced_R()
+    R = creat_dummy_data(2,2,4,0.5)
+    mask = missing_mask(R, 0.7)
+    R_obs = deepcopy(R)
+    R_obs[mask] .= 0  # It should be NaN, but use 0 here becausde 0 * NaN = NaN.
+
+    # hyper parameter for dimension of U,V and T
+    D = 2
+
+    # hyper parameter for U,V,T prior
+    mu_0 = zeros(D)
+    beta_0 = 1
+    W_0 = Matrix{Float64}(I, D, D)  # parameter for Wishart dist, DxD matrix
+    nu_0 = D  # parameter for Wishart dist
+
+    # hyper parameter for R prior
+    rho_0 = ones(D)
+
+    # hyper parameter for alpha prior
+    nu_tilde_0 = 1
+    W_tilde_0::Matrix{Float64} = hcat([0.04])
+
+    U,V,T,alpha = gibbs_sampling(R_obs, mask, D, mu_0, beta_0, W_0, nu_0, rho_0, nu_tilde_0, W_tilde_0)
+    R_pred = inferenced_R(U, V, T, alpha)
+    print(typeof(R_pred), R_pred)
 end
 
 function sample_TK(K, mu_, Lambda_, alpha, X, mask, R, T_K_prev)
@@ -798,4 +851,6 @@ end
 #test_sample_Ui()
 #test_sample_T1()
 #test_sampleTk_mt2()
-test_sample_TK()
+#test_sample_TK()
+#test_gibbs_sampling()
+test_inferenced_R()
