@@ -61,7 +61,7 @@ function gibbs_sampling(R, mask, D, mu_0, beta_0, W_0, nu_0, rho_0, nu_tilde_0, 
         alpha[:,:,l] = sample_alpha(nu_tilde_0, W_tilde_0, mask, R, U[:,:,l], V[:,:,l], T[:,:,l])[1][1]
         mu_U, Lambda_U = sample_theta(U[:,:,l], beta_0, mu_0, W_0, nu_0)
         mu_V, Lambda_V = sample_theta(V[:,:,l], beta_0, mu_0, W_0, nu_0)
-        mu_T, Lambda_T = sample_theta(T[:,:,l], beta_0, mu_0, W_0, nu_0)
+        mu_T, Lambda_T = sample_theta_T(T[:,:,l], beta_0, rho_0, W_0, nu_0)
 
         # Update U
         Q::Matrix{Vector{Float64}} = zeros(M, K, D)
@@ -208,16 +208,54 @@ function sample_theta_T(T, beta_, rho_, W_, nu_)
     mu = (beta_*rho_ + T[:,1]) / (beta_ + 1)
     beta = beta_ + 1
     nu = nu_ + K
-    acc::Matrix{Float64} = zeros(size(W_))
+    acc = zeros(size(W_))
     for k in 2 : K
-        tmp = T[k, :] - T[k-1, :]
-        acc += tmp * tmp'
+        tmp = T[:, k] - T[:, k-1]
+        #print(tmp, typeof(tmp), typeof(acc), typeof(tmp * tmp'))
+        print(acc, tmp*tmp')
+        acc += (tmp * tmp')
     end
-    W = inv(inv(W_) + acc + (beta_/(1+beta)) * ((T[1,:] - rho_) * (T[1,:] - rho_)'))
+    W = inv(inv(W_) + acc + (beta_/(1+beta)) * ((T[:,1] - rho_) * (T[:,1] - rho_)'))
 
     Lambda_sample = rand(Wishart(nu, W))
     mu_sample = rand(MvNormal(mu, PDMats.PDMat(Symmetric(inv(beta * Lambda_sample)))))
     return mu_sample, Lambda_sample
+end
+
+function test_sample_theta_T()
+    R = creat_dummy_data(2,2,4,0.5)
+    mask = missing_mask(R, 0.7)
+    R_obs = deepcopy(R)
+    R_obs[mask] .= 0
+
+    # hyper parameter for dimension of U,V and T
+    D = 2
+
+    # hyper parameter for U,V,T prior
+    mu_0 = zeros(D)
+    beta_0 = 1
+    W_0 = Matrix{Float64}(I, D, D)  # parameter for Wishart dist, DxD matrix
+    nu_0 = D  # parameter for Wishart dist
+
+    # hyper parameter for R prior
+    rho_0 = ones(D)
+
+    N,M,K = size(R)
+
+    # initilize
+    T1 = init_T(W_0, nu_0, rho_0, beta_0, K)
+
+    L = 1
+    # Container
+    T = zeros(D, K, L+1)
+
+    T[:,:,1] = T1
+
+    p = Progress(L)
+    for l in 1 : L
+        mu_T, Lambda_T = sample_theta_T(T[:,:,l], beta_0, rho_0, W_0, nu_0)
+        print(mu_T, Lambda_T)
+    end
 end
 
 function sample_theta(U, beta_, mu_, W_, nu_)
@@ -253,20 +291,11 @@ function test_sample_theta()
     W_0 = Matrix{Float64}(I, D, D)  # parameter for Wishart dist, DxD matrix
     nu_0 = D  # parameter for Wishart dist
 
-    # hyper parameter for R prior
-    rho_0 = ones(D)
-
-    # hyper parameter for alpha prior
-    nu_tilde_0 = 1
-    W_tilde_0 = hcat([0.04]) # 1x1 matrix
-
 
     N,M,K = size(R)
 
     # initilize
     U1,_,_ = init_model_params(W_0, nu_0, mu_0, beta_0, N)
-    V1,_,_ = init_model_params(W_0, nu_0, mu_0, beta_0, M)
-    T1 = init_T(W_0, nu_0, rho_0, beta_0, K)
 
     L = 1
     # Container
@@ -282,7 +311,7 @@ function test_sample_theta()
     p = Progress(L)
     for l in 1 : L
         mu_U, Lambda_U = sample_theta(U[:,:,l], beta_0, mu_0, W_0, nu_0)
-        print(mu_U, Lambda)
+        print(mu_U, Lambda_U)
     end
 end
 
@@ -457,4 +486,5 @@ end
 #test_missing_mask()
 #test_multi_dot()
 #test_sample_alpha()
-test_sample_theta()
+#test_sample_theta() #-> [1.36413, 2.11034][2.20263 -1.40809; -1.40809 1.09076]
+test_sample_theta_T()
