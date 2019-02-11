@@ -12,7 +12,7 @@ using PDMats
 
 # check the type and dimenstion of input, output for each function and write test case
 
-function test()
+function demo()
     R = creat_dummy_data(2,2,4,0.5)
     mask = missing_mask(R, 0.7)
     R_obs = deepcopy(R)
@@ -34,11 +34,14 @@ function test()
     nu_tilde_0 = 1
     W_tilde_0::Matrix{Float64} = hcat([0.04])
 
-    U,V,T,alpha = gibbs_sampling(R_obs, mask, D, mu_0, beta_0, W_0, nu_0, rho_0, nu_tilde_0, W_tilde_0)
+    U,V,T,alpha = gibbs_sampling(R_obs, mask, D, mu_0, beta_0, W_0, nu_0, rho_0, nu_tilde_0, W_tilde_0, 100)
     R_inferred =  inferenced_R(U,V,T,alpha)
+    print("R: ", R_obs, "\n")
+    print("R_obs: ", R_obs, "\n")
+    print("R_inferred: ", R_inferred, "\n")
 end
 
-function gibbs_sampling(R, mask, D, mu_0, beta_0, W_0, nu_0, rho_0, nu_tilde_0, W_tilde_0)
+function gibbs_sampling(R, mask, D, mu_0, beta_0, W_0, nu_0, rho_0, nu_tilde_0, W_tilde_0, iter)
 
     N,M,K = size(R)
 
@@ -47,19 +50,17 @@ function gibbs_sampling(R, mask, D, mu_0, beta_0, W_0, nu_0, rho_0, nu_tilde_0, 
     V1,_,_ = init_model_params(W_0, nu_0, mu_0, beta_0, M)
     T1 = init_T(W_0, nu_0, rho_0, beta_0, K)
 
-    L = 10
     # Container
-    U = zeros(D, N, L+1)
-    V = zeros(D, M, L+1)
-    T = zeros(D, K, L+1)
-    alpha = zeros(size(W_tilde_0)[1],size(W_tilde_0)[2], L)
+    U = zeros(D, N, iter+1)
+    V = zeros(D, M, iter+1)
+    T = zeros(D, K, iter+1)
+    alpha = zeros(size(W_tilde_0)[1],size(W_tilde_0)[2], iter)
 
     U[:,:,1] = U1
     V[:,:,1] = V1
     T[:,:,1] = T1
 
-    p = Progress(L)
-    for l in 1 : L
+    @showprogress for l in 1 : iter
         alpha[:,:,l] = sample_alpha(nu_tilde_0, W_tilde_0, mask, R, U[:,:,l], V[:,:,l], T[:,:,l])
         mu_U, Lambda_U = sample_theta(U[:,:,l], beta_0, mu_0, W_0, nu_0)
         mu_V, Lambda_V = sample_theta(V[:,:,l], beta_0, mu_0, W_0, nu_0)
@@ -100,7 +101,6 @@ function gibbs_sampling(R, mask, D, mu_0, beta_0, W_0, nu_0, rho_0, nu_tilde_0, 
         end
         T[:,K,l+1] = sample_TK(K, mu_T, Lambda_T, alpha[:,:,l], X, mask, R, T[:,K-1,l])
 
-        next!(p)
     end
 
     return U,V,T,alpha
@@ -128,7 +128,7 @@ function test_gibbs_sampling()
     nu_tilde_0 = 1
     W_tilde_0::Matrix{Float64} = hcat([0.04])
 
-    U,V,T,alpha = gibbs_sampling(R_obs, mask, D, mu_0, beta_0, W_0, nu_0, rho_0, nu_tilde_0, W_tilde_0)
+    U,V,T,alpha = gibbs_sampling(R_obs, mask, D, mu_0, beta_0, W_0, nu_0, rho_0, nu_tilde_0, W_tilde_0, 100)
     print(U,V,T,alpha)
 end
 
@@ -172,7 +172,7 @@ function test_inferenced_R()
     nu_tilde_0 = 1
     W_tilde_0::Matrix{Float64} = hcat([0.04])
 
-    U,V,T,alpha = gibbs_sampling(R_obs, mask, D, mu_0, beta_0, W_0, nu_0, rho_0, nu_tilde_0, W_tilde_0)
+    U,V,T,alpha = gibbs_sampling(R_obs, mask, D, mu_0, beta_0, W_0, nu_0, rho_0, nu_tilde_0, W_tilde_0, 100)
     R_pred = inferenced_R(U, V, T, alpha)
     print(typeof(R_pred), R_pred)
 end
@@ -853,4 +853,5 @@ end
 #test_sampleTk_mt2()
 #test_sample_TK()
 #test_gibbs_sampling()
-test_inferenced_R()
+#test_inferenced_R()
+demo()
