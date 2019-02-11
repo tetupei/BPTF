@@ -1,6 +1,7 @@
 using LinearAlgebra
 using Distributions
 using ProgressMeter
+using PDMats
 
 #R: NxMxK
 #U: DxN
@@ -57,7 +58,7 @@ function gibbs_sampling(R, mask, D, mu_0, beta_0, W_0, nu_0, rho_0, nu_tilde_0, 
 
     p = Progress(L)
     for l in 1 : L
-        alpha[:,:,l] = sample_alpha(nu_tilde_0, W_tilde_0, mask, R, U[:,:,l], V[:,:,l], T[:,:,l])
+        alpha[:,:,l] = sample_alpha(nu_tilde_0, W_tilde_0, mask, R, U[:,:,l], V[:,:,l], T[:,:,l])[1][1]
         mu_U, Lambda_U = sample_theta(U[:,:,l], beta_0, mu_0, W_0, nu_0)
         mu_V, Lambda_V = sample_theta(V[:,:,l], beta_0, mu_0, W_0, nu_0)
         mu_T, Lambda_T = sample_theta(T[:,:,l], beta_0, mu_0, W_0, nu_0)
@@ -215,46 +216,105 @@ function sample_theta_T(T, beta_, rho_, W_, nu_)
     W = inv(inv(W_) + acc + (beta_/(1+beta)) * ((T[1,:] - rho_) * (T[1,:] - rho_)'))
 
     Lambda_sample = rand(Wishart(nu, W))
-    mu_sample = rand(MvNormal(mu, PDMats.PDMat(Symmetric(inv(beta * Lambda)))))
+    mu_sample = rand(MvNormal(mu, PDMats.PDMat(Symmetric(inv(beta * Lambda_sample)))))
     return mu_sample, Lambda_sample
 end
 
 function sample_theta(U, beta_, mu_, W_, nu_)
     _, N = size(U)
-    U_bar = sum(U, 2) / N
-    S_bar::Matrix{Float64} = zeros(size(W)[1], size(W)[2])
+    U_bar = dropdims(sum(U, dims=2) ./ N, dims=2)
+    S_bar::Matrix{Float64} = zeros(size(W_)[1], size(W_)[2])
     for i in 1 : N
         tmp = U[:,i] - U_bar
         S_bar += (tmp * tmp')/N
     end
-    mu = (beta_*mu_ + N*U_bar) / (beta_ + N)
+    mu = (beta_*mu_ + N*U_bar) ./ (beta_ + N)
     beta = beta_ + N
     nu = nu_ + N
     W = inv(inv(W_) + N*S_bar + beta_ * N * ((mu_ - U_bar) * (mu_ - U_bar)') / (beta_ + N))
 
     Lambda_sample = rand(Wishart(nu, PDMats.PDMat(Symmetric(W))))
-    mu_sample = rand(MvNormal(mu, PDMats.PDMat(Symmetric(inv(beta * Lambda)))))
+    mu_sample = rand(MvNormal(mu, PDMats.PDMat(Symmetric(inv(beta * Lambda_sample)))))
     return mu_sample, Lambda_sample
 end
 
-function multi_dot(X::Vector{Float64},Y::Vector{Float64},Z::Vector{Float64})
+function test_sample_theta()
+    R = creat_dummy_data(2,2,4,0.5)
+    mask = missing_mask(R, 0.7)
+    R_obs = deepcopy(R)
+    R_obs[mask] .= 0
+
+    # hyper parameter for dimension of U,V and T
+    D = 2
+
+    # hyper parameter for U,V,T prior
+    mu_0 = zeros(D)
+    beta_0 = 1
+    W_0 = Matrix{Float64}(I, D, D)  # parameter for Wishart dist, DxD matrix
+    nu_0 = D  # parameter for Wishart dist
+
+    # hyper parameter for R prior
+    rho_0 = ones(D)
+
+    # hyper parameter for alpha prior
+    nu_tilde_0 = 1
+    W_tilde_0 = hcat([0.04]) # 1x1 matrix
+
+
+    N,M,K = size(R)
+
+    # initilize
+    U1,_,_ = init_model_params(W_0, nu_0, mu_0, beta_0, N)
+    V1,_,_ = init_model_params(W_0, nu_0, mu_0, beta_0, M)
+    T1 = init_T(W_0, nu_0, rho_0, beta_0, K)
+
+    L = 1
+    # Container
+    U = zeros(D, N, L+1)
+    V = zeros(D, M, L+1)
+    T = zeros(D, K, L+1)
+    alpha = zeros(size(W_tilde_0)[1],size(W_tilde_0)[2], L)
+
+    U[:,:,1] = U1
+    V[:,:,1] = V1
+    T[:,:,1] = T1
+
+    p = Progress(L)
+    for l in 1 : L
+        mu_U, Lambda_U = sample_theta(U[:,:,l], beta_0, mu_0, W_0, nu_0)
+        print(mu_U, Lambda)
+    end
+end
+
+
+function multi_dot(X::Vector{Float64}, Y::Vector{Float64}, Z::Vector{Float64})
     L = length(X)
-    acc = 0
+    acc::Float64 = 0.
     for i in 1 : L
         acc += X[i] * Y[i] * Z[i]
     end
     return acc
 end
 
+function test_multi_dot()
+    @assert 2 == multi_dot([1.,1.], [1.,1.], [1.,1.])
+end
+
+"""
+# Arguments
+- W_tilde: DxD
+
+# Return value
+alpha: DxD
+"""
 function sample_alpha(nu_tilde, W_tilde, I, R, U, V, T)
     N, M, K = size(R)
     nu = nu_tilde + sum(I)
-    acc = hcat([0])
+    acc = hcat([0.])
     for k in 1 : K
         for i in 1 : N
             for j in 1 : M
-                print(size(U), size(V), size(T))
-                acc[1,1] += I[i,j,k](R[i,j,k] - multi_dot(U[:,i],V[:,j],T[:,k]))
+                acc[1,1] += I[i,j,k] * (R[i,j,k] - multi_dot(U[:,i],V[:,j],T[:,k]))
             end
         end
     end
@@ -292,7 +352,8 @@ function test_sample_alpha()
     V1,_,_ = init_model_params(W_0, nu_0, mu_0, beta_0, M)
     T1 = init_T(W_0, nu_0, rho_0, beta_0, K)
 
-    print(sample_alpha(nu_tilde_0, W_tilde_0, mask, R_obs, U1, V1, T1))
+    sampled_alpha = sample_alpha(nu_tilde_0, W_tilde_0, mask, R_obs, U1, V1, T1)
+    print(typeof(sampled_alpha))
 end
 
 function creat_dummy_data(N::Int64, M::Int64, K::Int64, threshold::Float64)
@@ -394,4 +455,6 @@ end
 #test_init_T()
 #test_create_dummy_data()
 #test_missing_mask()
-test_sample_alpha()
+#test_multi_dot()
+#test_sample_alpha()
+test_sample_theta()
